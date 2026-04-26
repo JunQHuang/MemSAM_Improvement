@@ -53,6 +53,7 @@ def main():
     parser.add_argument('--semi', action="store_true")
     parser.add_argument('--reinforce', action="store_true")
     parser.add_argument('--disable_point_prompt', action="store_true")
+    parser.add_argument('--confidence_threshold', type=float, default=0.8, help='confidence threshold for memory gating (0-1)')
     args = parser.parse_args()
     print(args)
 
@@ -101,6 +102,8 @@ def main():
 
     # ==================================================build model==================================================
     model = get_model(args.modelname, args=args, opt=opt)
+    if hasattr(model, 'confidence_threshold'):
+        model.confidence_threshold = args.confidence_threshold
     opt.batch_size = args.batch_size * args.n_gpu
 
     tf_train = JointTransform3D(img_size=args.encoder_input_size, low_img_size=args.low_image_size, ori_size=opt.img_size, crop=opt.crop, p_flip=0.0, p_rota=0.5, p_scale=0.5, p_gaussn=0.0,

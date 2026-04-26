@@ -56,6 +56,10 @@ class MemSAM(nn.Module):
         self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
         self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
 
+        # Confidence-aware memory filtering parameters
+        self.confidence_threshold = 0.8
+        self.confidence_scale = 10.0
+
         for param in self.prompt_encoder.parameters():
             param.requires_grad = False
         for param in self.mask_decoder.parameters():
@@ -276,10 +280,17 @@ class MemSAM(nn.Module):
 
             # last frame no encode
             if ti < t-1:
+                # Confidence-aware memory gating
+                prob = torch.sigmoid(mask)
+                entropy = -(prob * torch.log(prob + 1e-8) + (1 - prob) * torch.log(1 - prob + 1e-8))
+                frame_confidence = 1.0 - entropy.mean()
+                gate = torch.sigmoid(self.confidence_scale * (frame_confidence - self.confidence_threshold))
+
                 # update memory
                 is_deep_update = np.random.rand() < 0.2
                 # v16, hidden = self.memory('encode_value', imgs[:,ti], me[:,0], hidden, mask, is_deep_update=is_deep_update)
                 v16, hidden = self.memory('encode_value', imgs[:,ti], imge[:,ti], hidden, mask, is_deep_update=is_deep_update)
+                v16 = v16 * gate  # scale memory value by prediction confidence
                 values = torch.cat([values, v16], 3)
 
         pred = torch.stack(frames_pred, dim=1) # b t c h w
