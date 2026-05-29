@@ -1,10 +1,13 @@
-from ast import arg
+import cv2  # Must be imported first on Windows to avoid DLL conflicts with PyTorch/Pillow
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+import torch
+torch.backends.cudnn.enabled = False
+from ast import arg
 # os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import argparse
 from pickle import FALSE, TRUE
-from statistics import mode
-from tkinter import image_names
 import torch
 import torchvision
 from torch import nn
@@ -45,7 +48,9 @@ args = EasyDict(base_lr=0.0005,
             point_numbers_prompt=True,
             point_numbers=1,
             reinforce=True,
-            compute_ef=True)
+            compute_ef=True,
+            disable_confidence_gating=False,  # Set to True to test the un-gated baseline
+            confidence_threshold=0.8)
 
 opt = get_config(args.task)  # please configure your hyper-parameter
 opt.load_path = 'checkpoints/CAMUS_full/your_checkpoint.pth'
@@ -77,8 +82,12 @@ test_dataset = EchoVideoDataset(opt.data_path, opt.test_split,  tf_val, img_size
 testloader = DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0, pin_memory=True)
 
 model = get_model(args.modelname, args=args, opt=opt)
+if hasattr(model, 'confidence_threshold'):
+    model.confidence_threshold = args.confidence_threshold
+if hasattr(model, 'disable_confidence_gating'):
+    model.disable_confidence_gating = args.disable_confidence_gating
+    print(f'Confidence-Aware Memory Gating: {"DISABLED (baseline)" if args.disable_confidence_gating else f"ENABLED (tau={args.confidence_threshold})"}')
 model.to(device)
-model.train()
 
 checkpoint = torch.load(opt.load_path)
 #------when the load model is saved under multiple GPU
@@ -100,9 +109,12 @@ criterion = get_criterion(modelname=args.modelname, opt=opt)
 # print("Total_params: {}".format(pytorch_total_params))
 input = torch.randn(1, 1, 3, args.encoder_input_size, args.encoder_input_size).cuda()
 points = (torch.tensor([[[[1, 2]]]]).float().cuda(), torch.tensor([[1]]).float().cuda())
-from thop import profile
-flops, params = profile(model, inputs=(input, points), )
-print('Gflops:', flops/1000000000, 'params:', params)
+try:
+    from thop import profile
+    flops, params = profile(model, inputs=(input, points), )
+    print('Gflops:', flops/1000000000, 'params:', params)
+except Exception:
+    print('thop package not found, skipping FLOPs profiling.')
 
 # sum_time = 0
 # with torch.no_grad():

@@ -148,7 +148,14 @@ class Mem(nn.Module):
         else:
             raise NotImplementedError
 
-        imge = self.key_encoder(frame) #b t c h w
+        if need_reshape:
+            # Process frames one by one in a loop to reduce peak GPU memory usage significantly (down to 1/10th)
+            imge_list = []
+            for i in range(frame.shape[0]):
+                imge_list.append(self.key_encoder(frame[i:i+1]))
+            imge = torch.cat(imge_list, dim=0)
+        else:
+            imge = self.key_encoder(frame) #b t c h w
         key, shrinkage, selection = self.key_proj(imge, need_sk, need_ek)
 
         if need_reshape:

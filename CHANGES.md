@@ -58,13 +58,3 @@ python train_video.py --modelname MemSAM --task CAMUS_Video_Full --enable_memory
 python train_video.py --modelname MemSAM --task CAMUS_Video_Full --enable_memory --reinforce --confidence_threshold 0.7
 ```
 
-## Results Comparison
-
-| Method | DSC (%) | HD (mm) | Notes |
-|--------|---------|---------|-------|
-| MemSAM (baseline) | — | — | Original, no filtering |
-| Ours (τ=0.7) | — | — | |
-| Ours (τ=0.8) | — | — | Recommended |
-| Ours (τ=0.9) | — | — | |
-
-*Fill with real numbers after training.*

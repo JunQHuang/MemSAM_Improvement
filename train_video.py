@@ -1,9 +1,12 @@
+import cv2  # Must be imported first on Windows to avoid DLL conflicts with PyTorch/Pillow
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+import torch
+torch.backends.cudnn.enabled = False
 # os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import argparse
 from pickle import FALSE, TRUE
-from statistics import mode
-from tkinter import image_names
 from easydict import EasyDict
 import torch
 import torchvision
@@ -13,7 +16,10 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except Exception:
+    SummaryWriter = None  # only required when --keep_log is set
 import time
 import random
 from utils.config import get_config
@@ -21,7 +27,10 @@ from utils.evaluation import get_eval
 from importlib import import_module
 
 from torch.nn.modules.loss import CrossEntropyLoss
-from monai.losses import DiceCELoss
+try:
+    from monai.losses import DiceCELoss  # not used directly; kept for compatibility
+except Exception:
+    DiceCELoss = None
 from einops import rearrange
 from models.model_dict import get_model
 from utils.data_us import EchoVideoDataset, JointTransform3D
@@ -54,6 +63,7 @@ def main():
     parser.add_argument('--reinforce', action="store_true")
     parser.add_argument('--disable_point_prompt', action="store_true")
     parser.add_argument('--confidence_threshold', type=float, default=0.8, help='confidence threshold for memory gating (0-1)')
+    parser.add_argument('--disable_confidence_gating', action="store_true", help='disable Confidence-Aware Memory Gating (reproduces the original MemSAM baseline)')
     args = parser.parse_args()
     print(args)
 
@@ -104,6 +114,9 @@ def main():
     model = get_model(args.modelname, args=args, opt=opt)
     if hasattr(model, 'confidence_threshold'):
         model.confidence_threshold = args.confidence_threshold
+    if hasattr(model, 'disable_confidence_gating'):
+        model.disable_confidence_gating = args.disable_confidence_gating
+        print(f'Confidence-Aware Memory Gating: {"DISABLED (baseline)" if args.disable_confidence_gating else f"ENABLED (tau={args.confidence_threshold})"}')
     opt.batch_size = args.batch_size * args.n_gpu
 
     tf_train = JointTransform3D(img_size=args.encoder_input_size, low_img_size=args.low_image_size, ori_size=opt.img_size, crop=opt.crop, p_flip=0.0, p_rota=0.5, p_scale=0.5, p_gaussn=0.0,
@@ -141,6 +154,9 @@ def main():
     pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print("Total_params: {}".format(pytorch_total_params))
 
+    # Initialize GradScaler for mixed precision training
+    scaler = torch.cuda.amp.GradScaler()
+
     #  ========================================================================= begin to train the model ============================================================================
     iter_num = 0
     max_iterations = opt.epochs * len(trainloader)
@@ -161,19 +177,21 @@ def main():
             # video to image
             # b, t, c, h, w = imgs.shape
             # -------------------------------------------------------- forward --------------------------------------------------------
-            pred = model(imgs, pt, None)
-            # if masks.shape[1] == 10:
-            #     masks = masks[:,[0,-1]]
-            # semi supervised
-            if opt.semi:
-                train_loss = criterion(pred[:,[0,-1],0,:,:], masks[:,[0,-1]])
-            # full supervised
-            else:
-                train_loss = criterion(pred[:,:,0], masks)
-            # -------------------------------------------------------- backward -------------------------------------------------------
             optimizer.zero_grad()
-            train_loss.backward()
-            optimizer.step()
+            with torch.cuda.amp.autocast():
+                pred = model(imgs, pt, None)
+                # if masks.shape[1] == 10:
+                #     masks = masks[:,[0,-1]]
+                # semi supervised
+                if opt.semi:
+                    train_loss = criterion(pred[:,[0,-1],0,:,:], masks[:,[0,-1]])
+                # full supervised
+                else:
+                    train_loss = criterion(pred[:,:,0], masks)
+            # -------------------------------------------------------- backward -------------------------------------------------------
+            scaler.scale(train_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             train_losses += train_loss.item()
             print(train_loss)
             # ------------------------------------------- adjust the learning rate when needed-----------------------------------------

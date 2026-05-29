@@ -1,6 +1,9 @@
 import numpy as np
 import torch
-from hausdorff import hausdorff_distance
+try:
+    from hausdorff import hausdorff_distance
+except Exception:
+    hausdorff_distance = None  # optional; only used by non-CAMUS slice-level eval
 
 def dice_coefficient(pred, gt, smooth=1e-5):
     """ computational formula：

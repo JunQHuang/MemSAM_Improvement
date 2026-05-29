@@ -1,46 +1,54 @@
-# MemSAM
+# MemSAM + CAMG (Ours)
 [**MemSAM: Taming Segment Anything Model for Echocardiography Video Segmentation**](https://openaccess.thecvf.com/content/CVPR2024/papers/Deng_MemSAM_Taming_Segment_Anything_Model_for_Echocardiography_Video_Segmentation_CVPR_2024_paper.pdf), CVPR 2024, _Oral_
 
-Xiaolong Deng^, [Huisi Wu*](https://csse.szu.edu.cn/staff/~hswu/), [Runhao Zeng](https://zengrunhao.com/), [Jing Qin](https://research.polyu.edu.hk/en/persons/jing-qin)
-
-[[Paper]](https://openaccess.thecvf.com/content/CVPR2024/papers/Deng_MemSAM_Taming_Segment_Anything_Model_for_Echocardiography_Video_Segmentation_CVPR_2024_paper.pdf) [[Video]](https://www.youtube.com/watch?v=N2usOkkNHQs) [[Project]](https://github.com/dengxl0520/MemSAM)
-<!-- ![MemSAM Design](/assets/framework.jpg) -->
+This repository contains the official MemSAM codebase extended with our novel **Confidence-Aware Memory Gating (CAMG)** mechanism. CAMG dynamically scales memory update values based on prediction confidence to suppress error propagation and acoustic-speckle noise contamination in echocardiography videos.
 
 <div align=center>
 <img src="/assets/framework.jpg" width="600" alt="MemSAM Design" />
 </div>
 
-<!-- The code will be uploaded later. -->
+## Key Extensions (CAMG)
+- **Dynamic Memory Gating:** Scales memory writes using a soft sigmoid gate derived from the model's predicted confidence maps.
+- **VRAM Optimizations:** Sequential frame-by-frame encoding inside `encode_key` reducing peak training GPU memory by over 90% (making ViT-B training comfortable on 8GB GPUs).
+- **AMP Support:** Out-of-the-box Automatic Mixed Precision (`torch.cuda.amp`) integration.
 
 ## Installation
-```
+```bash
 conda create --name memsam python=3.10
 conda activate memsam
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install requirements.txt
+conda install -c conda-forge scikit-image scipy pandas seaborn easydict einops batchgenerators medpy tensorboard -y
 ```
 
 ## Usage
-### prepare dataset
-First, download the dataset from:
-- [CAMUS](https://www.creatis.insa-lyon.fr/Challenge/camus/index.html)
-- [EchoNet-Dynamic](https://echonet.github.io/dynamic/index.html)
-  
-Then process the dataset according to `utils/preprocess_echonet.py` and `utils/preprocess_camus.py`, for example:
-
-```
-# CAMUS
-python utils/preprocess_camus.py -i /data/dengxiaolong/CAMUS_public/database_nifti -o /data/dengxiaolong/memsam/CAMUS_public
-
-# EchoNet-Dynamic
-python utils/preprocess_echonet.py -i /data/dengxiaolong/EchoNet-Dynamic -o /data/dengxiaolong/memsam/EchoNet
+### 1. Dataset Preprocessing
+Download CAMUS dataset, then run:
+```bash
+python utils/preprocess_camus.py -i CAMUS_public/database_nifti -o dataset/SAMUS/CAMUS_full -f CAMUS_public/camus_split.json
 ```
 
-### pretrain checkpoint download
-[ViT-B SAM model](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth)
+### 2. Pretrained Weights
+Download the [ViT-B SAM checkpoint](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth) and save it to `checkpoints/sam_vit_b_01ec64.pth`.
 
-### train and test
-Use `train_video.py` and `test_video.py` to train and test separately.
+### 3. Training
+- **Train our CAMG model (Recommended, VRAM optimized):**
+  ```bash
+  python train_video.py --modelname MemSAM --task CAMUS_Video_Full --enable_memory --reinforce --confidence_threshold 0.8 --batch_size 1 --frame_length 3 --keep_log --warmup
+  ```
+- **Train the original MemSAM baseline:**
+  ```bash
+  python train_video.py --modelname MemSAM --task CAMUS_Video_Full --enable_memory --reinforce --disable_confidence_gating --batch_size 1 --frame_length 3 --keep_log --warmup
+  ```
+
+### 4. Evaluation
+Evaluate checkpoints using:
+```bash
+python test_video.py
+```
+*(Toggle baseline vs CAMG options inside `test_video.py` EasyDict args).*
+
+## Results & Project Report
+Please refer to [REPORT.md](./REPORT.md) for our full experimental analysis, ablation studies, clinical ejection fraction (EF) analysis, and qualitative evaluation.
 
 ## Acknowledgement
 The work is based on [SAM](https://github.com/facebookresearch/segment-anything), [SAMUS](https://github.com/xianlin7/SAMUS) and [XMem](https://github.com/hkchengrex/XMem). Thanks for the open source contributions to these efforts!

@@ -1,5 +1,4 @@
 # this file is utilized to evaluate the models from different mode: 2D-slice level, 2D-patient level, 3D-patient level
-from tkinter import image_names
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import os
@@ -8,7 +7,10 @@ np.seterr(divide='ignore', invalid='ignore')
 import torch
 import torch.nn.functional as F
 import utils.metrics as metrics
-from hausdorff import hausdorff_distance
+try:
+    from hausdorff import hausdorff_distance
+except Exception:
+    hausdorff_distance = None
 from medpy.metric.binary import hd as medpy_hd
 from medpy.metric.binary import hd95 as medpy_hd95
 from medpy.metric.binary import assd as medpy_assd
@@ -592,7 +594,8 @@ def eval_camus(valloader, model, criterion, opt, args):
 
         start = time.time()
         with torch.no_grad():
-            pred = model(imgs, pt, None)
+            with torch.cuda.amp.autocast():
+                pred = model(imgs, pt, None)
         end = time.time()
         print('infer_time:', (end-start))
         sum_time = sum_time + (end-start)

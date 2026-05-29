@@ -59,6 +59,9 @@ class MemSAM(nn.Module):
         # Confidence-aware memory filtering parameters
         self.confidence_threshold = 0.8
         self.confidence_scale = 10.0
+        # When True, disables Confidence-Aware Memory Gating (gate=1 for all frames).
+        # This reproduces the original MemSAM baseline (uncritical memory writing).
+        self.disable_confidence_gating = False
 
         for param in self.prompt_encoder.parameters():
             param.requires_grad = False
@@ -280,11 +283,16 @@ class MemSAM(nn.Module):
 
             # last frame no encode
             if ti < t-1:
-                # Confidence-aware memory gating
-                prob = torch.sigmoid(mask)
-                entropy = -(prob * torch.log(prob + 1e-8) + (1 - prob) * torch.log(1 - prob + 1e-8))
-                frame_confidence = 1.0 - entropy.mean()
-                gate = torch.sigmoid(self.confidence_scale * (frame_confidence - self.confidence_threshold))
+                # Confidence-Aware Memory Gating (CAMG): scale each frame's memory
+                # contribution by its prediction confidence (1 - mean binary entropy).
+                # When disabled, gate=1 -> original MemSAM baseline behaviour.
+                if self.disable_confidence_gating:
+                    gate = 1.0
+                else:
+                    prob = torch.sigmoid(mask)
+                    entropy = -(prob * torch.log(prob + 1e-8) + (1 - prob) * torch.log(1 - prob + 1e-8))
+                    frame_confidence = 1.0 - entropy.mean()
+                    gate = torch.sigmoid(self.confidence_scale * (frame_confidence - self.confidence_threshold))
 
                 # update memory
                 is_deep_update = np.random.rand() < 0.2
