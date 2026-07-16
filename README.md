@@ -4,8 +4,9 @@
 This repository contains the official MemSAM codebase extended with our novel **Confidence-Aware Memory Gating (CAMG)** mechanism. CAMG dynamically scales memory update values based on prediction confidence to suppress error propagation and acoustic-speckle noise contamination in echocardiography videos.
 
 <div align=center>
-<img src="/assets/framework.jpg" width="600" alt="MemSAM Design" />
+<img width="753" height="498" alt="image" src="https://github.com/user-attachments/assets/069420a2-4386-47d3-b2f8-f5190b9eb335" />
 </div>
+
 
 ## Key Extensions (CAMG)
 - **Dynamic Memory Gating:** Scales memory writes using a soft sigmoid gate derived from the model's predicted confidence maps.
